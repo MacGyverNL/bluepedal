@@ -48,18 +48,31 @@ BLEHidAdafruit blehid;
  */
 byte pedals[] = {6, 9, 10, 11, 12};
 
-#define DEBOUNCE_TIME (3)  // Debounce time in ms
-#define BOUNCE_COUNT (5)   // Number of bounces during DEBOUNCE_TIME considered a button press.
-
-typedef void (* InterruptPedalInput) (void);
-typedef void (* TimerCallback) (TimerHandle_t);
-InterruptPedalInput pedalISRs[] = {int0, int1, int2, int3, int4};
-TimerCallback timercallbacks[] = {tcb0, tcb1, tcb2, tcb3, tcb4};
-
 #define NUMPEDALS (5)
 SoftwareTimer timers[NUMPEDALS];
 volatile int intreports[NUMPEDALS];
 TaskHandle_t keytasks[NUMPEDALS];
+
+#define DEBOUNCE_TIME (3)  // Debounce time in ms
+#define BOUNCE_COUNT (5)   // Number of bounces during DEBOUNCE_TIME considered a button press.
+
+void interrupt_service_routine(byte isrnum);
+void (* pedalISRs[]) () = {
+  [] () { interrupt_service_routine(0); },
+  [] () { interrupt_service_routine(1); },
+  [] () { interrupt_service_routine(2); },
+  [] () { interrupt_service_routine(3); },
+  [] () { interrupt_service_routine(4); },
+  };
+
+static void timer_callback(byte timernum);
+void (* timercallbacks[]) (TimerHandle_t) = {
+  [] (TimerHandle_t _handle) { timer_callback(0); },
+  [] (TimerHandle_t _handle) { timer_callback(1); },
+  [] (TimerHandle_t _handle) { timer_callback(2); },
+  [] (TimerHandle_t _handle) { timer_callback(3); },
+  [] (TimerHandle_t _handle) { timer_callback(4); },
+  };
 
 
 
@@ -70,6 +83,7 @@ TaskHandle_t keytasks[NUMPEDALS];
  */
 static uint8_t pageup = HID_KEY_PAGE_UP;
 static uint8_t pagedown = HID_KEY_PAGE_DOWN;
+
 
 
 void setup(void) {
@@ -106,7 +120,7 @@ void teardownBattery(void) {
 void setupSerial(void) {
   /*
    * Unless you actually need USB Serial for anything other than debug reports,
-   * don't bother waiting for it. I wait here once for 100ms to give the device
+   * don't bother waiting for it. I wait here once for 1000ms to give the device
    * a chance to settle before continuing.
    * 
    * On the nRF52840's native USB, if(Serial) correctly
@@ -280,33 +294,21 @@ void interrupt_service_routine(byte isrnum) {
   }
 }
 
-static void int0(void) { interrupt_service_routine(0); }
-static void int1(void) { interrupt_service_routine(1); }
-static void int2(void) { interrupt_service_routine(2); }
-static void int3(void) { interrupt_service_routine(3); }
-static void int4(void) { interrupt_service_routine(4); }
 
 
-
-static void timer_callback(byte callbacknum) {
+static void timer_callback(byte timernum) {
   /*
    * Abuse the bouncyness of the buttons to figure out whether it's a button press
    * or crosstalk. A button press should result in more than 10 interrupts in 3ms.
    */
-  if (intreports[callbacknum] >= BOUNCE_COUNT) {
+  if (intreports[timernum] >= BOUNCE_COUNT) {
     /*
      * Start the task that actually sends the keypresses to the master.
      */
-     vTaskResume(keytasks[callbacknum]);
+     vTaskResume(keytasks[timernum]);
   }
-  intreports[callbacknum] = 0;
+  intreports[timernum] = 0;
 }
-
-static void tcb0(TimerHandle_t xTimer) { timer_callback(0); }
-static void tcb1(TimerHandle_t xTimer) { timer_callback(1); }
-static void tcb2(TimerHandle_t xTimer) { timer_callback(2); }
-static void tcb3(TimerHandle_t xTimer) { timer_callback(3); }
-static void tcb4(TimerHandle_t xTimer) { timer_callback(4); }
 
 
 
