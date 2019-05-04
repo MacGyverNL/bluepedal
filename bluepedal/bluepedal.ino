@@ -301,9 +301,14 @@ static void timer_callback(byte timernum) {
    */
   if (intreports[timernum] >= BOUNCE_COUNT) {
     /*
-     * Start the task that actually sends the keypresses to the master.
+     * Notify the task that actually sends the keypresses to the master.
      */
-     vTaskResume(keytasks[timernum]);
+     xTaskNotifyGive(keytasks[timernum]);
+  } else {
+    if (Serial) {
+      Serial.print("Discarding interrupt count ");
+      Serial.println(intreports[timernum]);
+    }
   }
   intreports[timernum] = 0;
 }
@@ -323,10 +328,10 @@ void taskKeypress(void* key) {
   // Tasks must run as an infinite loop, unless they delete themselves
   // by using vTaskDelete before returning.
   while(1) {
-    // Suspend this task.
+    // Block this task.
     // Done at the top of the loop because it seems that
     // the task is run once upon creation.
-    vTaskSuspend(NULL);
+    ulTaskNotifyTake(pdFALSE, DELAY_FOREVER);
     
     blehid.keyboardReport(0, keyreport);
     blehid.keyboardReport(0, releaseall_arr);
