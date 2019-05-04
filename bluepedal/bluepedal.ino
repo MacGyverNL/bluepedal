@@ -288,10 +288,8 @@ void interrupt_service_routine(byte isrnum) {
       Serial.flush();
     }
   }
-  
-  if (xHigherPriorityTaskWoken != pdFALSE) {
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-  }
+
+  portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 
