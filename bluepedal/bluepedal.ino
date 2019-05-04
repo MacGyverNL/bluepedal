@@ -162,13 +162,13 @@ void teardownSerial(void) {
 
 void setupInputs(void) {
   TaskHandle_t pgupHandle = NULL, pgdnHandle = NULL;
-  if (xTaskCreate(taskKeypress, "PageUp", configMINIMAL_STACK_SIZE, (void*) &pageup, TASK_PRIO_LOW, &pgupHandle) != pdPASS) {
+  if (xTaskCreate(taskKeypress, "PageUp", SCHEDULER_STACK_SIZE_DFLT, (void*) &pageup, TASK_PRIO_LOW, &pgupHandle) != pdPASS) {
     if (Serial) {
       Serial.println("Unable to create task for PageUp! Panic!");
       Serial.flush();
     }
   }
-  if (xTaskCreate(taskKeypress, "PageDown", configMINIMAL_STACK_SIZE, (void*) &pagedown, TASK_PRIO_LOW, &pgdnHandle) != pdPASS) {
+  if (xTaskCreate(taskKeypress, "PageDown", SCHEDULER_STACK_SIZE_DFLT, (void*) &pagedown, TASK_PRIO_LOW, &pgdnHandle) != pdPASS) {
     if (Serial) {
       Serial.println("Unable to create task for PageDown! Panic!");
       Serial.flush();
@@ -385,7 +385,23 @@ void rtos_idle_callback(void)
 
 
 // Look mom, no loops!
-void loop(void) { };
+void loop(void) { }
+
+//void loop(void) {
+//  static long now, prev;
+//
+//  now = millis();
+//  if (now - prev > 1000) {
+//    if (Serial) {
+//      Serial.println("Loop");
+//      for (byte i = 0; i < NUMPEDALS; ++i) {
+//        Serial.println(intreports[i]);
+//      }
+//    }
+//    prev = millis();
+//  }
+//}
+
 //  if (Serial) {
 //    Serial.println(readVBat());
 //  }
