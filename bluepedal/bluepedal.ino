@@ -19,6 +19,8 @@ However, I would not mind an attribution if you reuse this code somewhere.
 -- Pol Van Aubel <dev@qwfp.nl>, 2019-05-02
 *************************************************************************/
 
+#define _DEBUG
+#define _TRACEIDLE
 
 #include <bluefruit.h>
 
@@ -50,10 +52,10 @@ byte pedals[] = {6, 9, 10, 11, 12};
 
 #define NUMPEDALS (5)
 SoftwareTimer timers[NUMPEDALS];
-volatile int intreports[NUMPEDALS];
+volatile uint8_t intreports[NUMPEDALS];
 TaskHandle_t keytasks[NUMPEDALS];
 
-#define DEBOUNCE_TIME (3)  // Debounce time in ms
+#define DEBOUNCE_TIME (5)  // Debounce time in ms
 #define BOUNCE_COUNT (5)   // Number of bounces during DEBOUNCE_TIME considered a button press.
 
 void interrupt_service_routine(byte isrnum);
@@ -85,6 +87,18 @@ static uint8_t pageup = HID_KEY_PAGE_UP;
 static uint8_t pagedown = HID_KEY_PAGE_DOWN;
 
 
+/*
+ * Debug stuff
+ */
+#ifdef _DEBUG
+volatile uint32_t debugreports[NUMPEDALS];
+SoftwareTimer debugtimer;
+#endif
+
+#ifdef _TRACEIDLE
+uint16_t ledintensity = 0;
+#endif
+
 
 void setup(void) {
   setupSerial();
@@ -95,6 +109,12 @@ void setup(void) {
   setupInputs();
 
   teardownSerial();
+
+#ifdef _DEBUG
+  debugtimer.begin(5000, debug_interrupts);
+  debugtimer.start();
+#endif
+
   suspendLoop();
 }
 
@@ -174,10 +194,13 @@ void setupInputs(void) {
       Serial.flush();
     }
   }
+
+#ifdef _DEBUG
   if (Serial) {
     Serial.println("Tasks have now been created.");
     Serial.flush();
   }
+#endif
 
   keytasks[0] = pgdnHandle;
   keytasks[1] = pgupHandle;
@@ -270,16 +293,20 @@ float readVBat(void) {
 
 
 void interrupt_service_routine(byte isrnum) {
-  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-  
   ++intreports[isrnum];
+
+#ifdef _DEBUG
+  ++debugreports[isrnum];
+#endif
 
   /*
    * Reset the timer every interrupt, so that it only expires
-   * 3 mSec after the last interrupt fired.
+   * DEBOUNCE_TIME mSec after the last interrupt fired.
    */
-  if (timers[isrnum].resetFromISR(&xHigherPriorityTaskWoken) != pdPASS) {
+  if (!timers[isrnum].resetFromISR()) {
     /* The reset did not execute successfully. Figure out what to do. */
+
+#ifdef _DEBUG
     // TODO Serial printing in a non-deferred ISR is a horrible idea.
     if (Serial) {
       Serial.print("Reset in interrupt ");
@@ -287,29 +314,38 @@ void interrupt_service_routine(byte isrnum) {
       Serial.println(" failed!");
       Serial.flush();
     }
+#endif
   }
-
-  portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 
 
 static void timer_callback(byte timernum) {
   /*
-   * Abuse the bouncyness of the buttons to figure out whether it's a button press
-   * or crosstalk. A button press should result in more than 10 interrupts in 3ms.
+   * Abuse the bouncyness of the buttons to figure out whether it's a button press  or crosstalk.
+   * A button press should result in more than BOUNCE_COUNT interrupts in DEBOUNCE_TIME ms.
    */
   if (intreports[timernum] >= BOUNCE_COUNT) {
     /*
      * Notify the task that actually sends the keypresses to the master.
      */
      xTaskNotifyGive(keytasks[timernum]);
-  } else {
+  }
+#ifdef _DEBUG
+  else {
     if (Serial) {
       Serial.print("Discarding interrupt count ");
-      Serial.println(intreports[timernum]);
+      Serial.print(intreports[timernum]);
+      Serial.print(" for pin ");
+      Serial.print(pedals[timernum]);
+      Serial.print(" (pedal ");
+      Serial.print(timernum);
+      Serial.println(").");
+      Serial.flush();
     }
   }
+#endif
+
   intreports[timernum] = 0;
 }
 
@@ -318,12 +354,14 @@ static void timer_callback(byte timernum) {
 void taskKeypress(void* key) {
   uint8_t keyreport[] = {*((uint8_t*)key), 0, 0, 0, 0, 0};
   static uint8_t releaseall_arr[] = {0, 0, 0, 0, 0, 0};
-  
+
+#ifdef _DEBUG
   if (Serial) {
     Serial.print("Created task for keycode ");
     Serial.println(keyreport[0]);
     Serial.flush();
   }
+#endif _DEBUG
   
   // Tasks must run as an infinite loop, unless they delete themselves
   // by using vTaskDelete before returning.
@@ -336,6 +374,7 @@ void taskKeypress(void* key) {
     blehid.keyboardReport(0, keyreport);
     blehid.keyboardReport(0, releaseall_arr);
 
+#ifdef _DEBUG
     if (Serial) {
       Serial.print("Emitting keycode ");
       Serial.print(keyreport[0]);
@@ -344,6 +383,7 @@ void taskKeypress(void* key) {
     } else {
       digitalToggle(LED_BLUE);
     }
+#endif
   }
 }
 
@@ -368,7 +408,7 @@ void set_keyboard_led(uint16_t conn_handle, uint8_t led_bitmap)
 }
 
 
-
+#ifdef _TRACEIDLE
 void rtos_idle_callback(void)
 {
   // Don't call any  FreeRTOS blocking API()
@@ -380,31 +420,38 @@ void rtos_idle_callback(void)
   // https://www.freertos.org/low-power-tickless-rtos.html
   //
   // Figure out the device's power behaviour using the red LED.
-  digitalToggle( LED_RED );
+  ++ledintensity;
+  analogWrite( LED_RED, (uint8_t) (ledintensity & 0x00FF) );
+  analogWrite( LED_BLUE, (uint8_t) ((ledintensity >> 8) & 0x00FF) );
+  analogWrite( 14, (uint8_t) (ledintensity & 0x00FF) );
+  analogWrite( 15, (uint8_t) ((ledintensity >> 8) & 0x00FF) );
   sd_power_mode_set(NRF_POWER_MODE_LOWPWR);
   //waitForEvent();
 }
+#endif
 
 
 
-// Look mom, no loops!
-void loop(void) { }
-
-//void loop(void) {
-//  static long now, prev;
-//
-//  now = millis();
-//  if (now - prev > 1000) {
-//    if (Serial) {
-//      Serial.println("Loop");
-//      for (byte i = 0; i < NUMPEDALS; ++i) {
-//        Serial.println(intreports[i]);
-//      }
-//    }
-//    prev = millis();
-//  }
-//}
+#ifdef _DEBUG
+void debug_interrupts(TimerHandle_t _handle) {
+  if (Serial) {
+    Serial.println("Debug:");
+    for (byte i = 0; i < NUMPEDALS; ++i) {
+      Serial.print("Pedal ");
+      Serial.print(i);
+      Serial.print(": ");
+      Serial.print(debugreports[i]);
+      Serial.println(" interrupts.");
+      Serial.flush();
+      debugreports[i] = 0;
+    }
+  }
+}
+#endif
 
 //  if (Serial) {
 //    Serial.println(readVBat());
 //  }
+
+// Look mom, no loops!
+void loop(void) { }
