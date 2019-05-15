@@ -19,8 +19,9 @@ However, I would not mind an attribution if you reuse this code somewhere.
 -- Pol Van Aubel <dev@qwfp.nl>, 2019-05-02
 *************************************************************************/
 
-#define _DEBUG
-#define _TRACEIDLE
+//#define _DEBUG
+//#define _DEBUG_INTERRUPTS
+//#define _TRACEIDLE
 
 #include <bluefruit.h>
 
@@ -90,7 +91,7 @@ static uint8_t pagedown = HID_KEY_PAGE_DOWN;
 /*
  * Debug stuff
  */
-#ifdef _DEBUG
+#ifdef _DEBUG_INTERRUPTS
 volatile uint32_t debugreports[NUMPEDALS];
 SoftwareTimer debugtimer;
 #endif
@@ -110,7 +111,7 @@ void setup(void) {
 
   teardownSerial();
 
-#ifdef _DEBUG
+#ifdef _DEBUG_INTERRUPTS
   debugtimer.begin(5000, debug_interrupts);
   debugtimer.start();
 #endif
@@ -295,7 +296,7 @@ float readVBat(void) {
 void interrupt_service_routine(byte isrnum) {
   ++intreports[isrnum];
 
-#ifdef _DEBUG
+#ifdef _DEBUG_INTERRUPTS
   ++debugreports[isrnum];
 #endif
 
@@ -432,7 +433,7 @@ void rtos_idle_callback(void)
 
 
 
-#ifdef _DEBUG
+#ifdef _DEBUG_INTERRUPTS
 void debug_interrupts(TimerHandle_t _handle) {
   if (Serial) {
     Serial.println("Debug:");
